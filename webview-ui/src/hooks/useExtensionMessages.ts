@@ -50,11 +50,18 @@ export interface WorkspaceFolder {
   path: string;
 }
 
+export type IdeType = 'vscode' | 'cursor' | 'unknown';
+
+export interface AgentProgress {
+  toolCount: number;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
+  agentProgress: Record<number, AgentProgress>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
   layoutReady: boolean;
@@ -70,6 +77,7 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  ideType: IdeType;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -107,6 +115,8 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  const [ideType, setIdeType] = useState<IdeType>('vscode');
+  const [agentProgress, setAgentProgress] = useState<Record<number, AgentProgress>>({});
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -213,6 +223,12 @@ export function useExtensionMessages(
           delete next[id];
           return next;
         });
+        setAgentProgress((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
         // Remove all sub-agent characters belonging to this agent
         os.removeAllSubagents(id);
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
@@ -294,9 +310,19 @@ export function useExtensionMessages(
             [id]: list.map((t) => (t.toolId === toolId ? { ...t, done: true } : t)),
           };
         });
+      } else if (msg.type === 'agentTurnProgress') {
+        const id = msg.id as number;
+        const toolCount = msg.toolCount as number;
+        setAgentProgress((prev) => ({ ...prev, [id]: { toolCount } }));
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number;
         setAgentTools((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setAgentProgress((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
           delete next[id];
@@ -482,6 +508,8 @@ export function useExtensionMessages(
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
         }
+      } else if (msg.type === 'ideInfo') {
+        setIdeType(msg.ide as IdeType);
       } else if (msg.type === 'externalAssetDirectoriesUpdated') {
         if (Array.isArray(msg.dirs)) {
           setExternalAssetDirectories(msg.dirs as string[]);
@@ -523,6 +551,7 @@ export function useExtensionMessages(
     selectedAgent,
     agentTools,
     agentStatuses,
+    agentProgress,
     subagentTools,
     subagentCharacters,
     layoutReady,
@@ -538,5 +567,6 @@ export function useExtensionMessages(
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    ideType,
   };
 }

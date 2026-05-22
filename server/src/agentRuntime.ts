@@ -362,6 +362,7 @@ export class AgentRuntime {
         isWaiting: false,
         permissionSent: false,
         hadToolsInTurn: false,
+        turnToolCount: 0,
         lastDataAt: 0,
         linesProcessed: 0,
         seenUnknownRecordTypes: new Set(),

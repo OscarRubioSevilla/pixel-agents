@@ -133,6 +133,9 @@ export const AUTO_ON_SIDE_DEPTH = 2;
 export const CHARACTER_HIT_HALF_WIDTH = 8;
 export const CHARACTER_HIT_HEIGHT = 24;
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
+export const TURN_PROGRESS_AVG_TOOLS = 8;
+export const TURN_PROGRESS_MAX_PCT = 95;
+export const TURN_PROGRESS_BAR_BG = 'rgba(255,255,255,0.1)';
 
 // ── Agent Teams ─────────────────────────────────────────────
 export const MAX_CONTEXT_TOKENS = 200_000;

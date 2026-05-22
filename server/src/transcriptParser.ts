@@ -234,6 +234,12 @@ export function processTranscriptLine(
               agent.activeToolIds.delete(completedToolId);
               agent.activeToolStatuses.delete(completedToolId);
               agent.activeToolNames.delete(completedToolId);
+              agent.turnToolCount++;
+              agents.broadcast({
+                type: 'agentTurnProgress',
+                id: agentId,
+                toolCount: agent.turnToolCount,
+              });
               // Send agentToolDone when hooks are off, or for Task/Agent tools
               // (which always use JSONL path for consistent sub-agent lifecycle).
               const isCompletedAgentTool =
@@ -260,12 +266,14 @@ export function processTranscriptLine(
           cancelWaitingTimer(agentId, waitingTimers);
           clearAgentActivity(agent, agentId, agents, permissionTimers);
           agent.hadToolsInTurn = false;
+          agent.turnToolCount = 0;
         }
       } else if (typeof content === 'string' && content.trim()) {
         // New user text prompt — new turn starting
         cancelWaitingTimer(agentId, waitingTimers);
         clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;
+        agent.turnToolCount = 0;
       }
     } else if (record.type === 'queue-operation' && record.operation === 'enqueue') {
       // Background agent completed — parse tool-use-id from XML content
@@ -352,6 +360,7 @@ export function processTranscriptLine(
       agent.isWaiting = true;
       agent.permissionSent = false;
       agent.hadToolsInTurn = false;
+      agent.turnToolCount = 0;
       // Skip status post when hooks already handled it
       if (!agent.hookDelivered) {
         agents.broadcast({

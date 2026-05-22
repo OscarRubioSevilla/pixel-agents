@@ -17,8 +17,11 @@ import {
   TOKEN_DANGER_THRESHOLD,
   TOKEN_WARN_THRESHOLD,
   TOOL_OVERLAY_VERTICAL_OFFSET,
+  TURN_PROGRESS_AVG_TOOLS,
+  TURN_PROGRESS_BAR_BG,
+  TURN_PROGRESS_MAX_PCT,
 } from '../../constants.js';
-import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import type { AgentProgress, SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
@@ -27,6 +30,7 @@ interface ToolOverlayProps {
   officeState: OfficeState;
   agents: number[];
   agentTools: Record<number, ToolActivity[]>;
+  agentProgress: Record<number, AgentProgress>;
   subagentCharacters: SubagentCharacter[];
   containerRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
@@ -59,6 +63,20 @@ function getActivityText(
   return 'Idle';
 }
 
+function estimateProgress(
+  agentId: number,
+  agentProgress: Record<number, AgentProgress>,
+  isActive: boolean,
+): number | null {
+  if (!isActive) return null;
+  const progress = agentProgress[agentId];
+  if (!progress || progress.toolCount === 0) return null;
+  return Math.min(
+    TURN_PROGRESS_MAX_PCT,
+    Math.round((1 - Math.exp(-progress.toolCount / TURN_PROGRESS_AVG_TOOLS)) * 100),
+  );
+}
+
 function getFuelColor(ratio: number): string {
   if (ratio >= TOKEN_CRITICAL_THRESHOLD) return FUEL_COLOR_CRITICAL;
   if (ratio >= TOKEN_DANGER_THRESHOLD) return FUEL_COLOR_DANGER;
@@ -70,6 +88,7 @@ export function ToolOverlay({
   officeState,
   agents,
   agentTools,
+  agentProgress,
   subagentCharacters,
   containerRef,
   zoom,
@@ -155,9 +174,11 @@ export function ToolOverlay({
         // Team info
         const isTeamAgent = !!ch.teamName;
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
+        const agentLabel = isSub ? undefined : ch.folderName || `Agent #${id}`;
+        const progress = isSub ? null : estimateProgress(id, agentProgress, isActive);
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        const hasExtraLines = !!(agentLabel || teamRoleLabel || progress !== null);
 
         return (
           <div
@@ -171,54 +192,76 @@ export function ToolOverlay({
               zIndex: isSelected ? 42 : 41,
             }}
           >
-            <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
-              {dotColor && (
-                <span
-                  className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission ? 'pixel-pulse' : ''}`}
-                  style={{ background: dotColor }}
-                />
-              )}
-              <div className="flex flex-col gap-0 overflow-hidden">
-                {teamRoleLabel && (
+            <div className="flex flex-col border-border px-8 pt-2 pb-4 gap-2 pixel-panel whitespace-nowrap max-w-2xs min-w-20">
+              <div className="flex items-center gap-5">
+                {dotColor && (
+                  <span
+                    className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission ? 'pixel-pulse' : ''}`}
+                    style={{ background: dotColor }}
+                  />
+                )}
+                <div className="flex flex-col gap-0 overflow-hidden flex-1">
+                  {agentLabel && (
+                    <span className="text-2xs leading-none overflow-hidden text-ellipsis block text-text-muted">
+                      {agentLabel}
+                    </span>
+                  )}
+                  {teamRoleLabel && (
+                    <span
+                      className="overflow-hidden text-ellipsis block leading-none"
+                      style={{
+                        fontSize: '18px',
+                        color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
+                        fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                      }}
+                    >
+                      {teamRoleLabel}
+                    </span>
+                  )}
                   <span
                     className="overflow-hidden text-ellipsis block leading-none"
                     style={{
-                      fontSize: '18px',
-                      color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
-                      fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                      fontSize: isSub ? '20px' : '22px',
+                      fontStyle: isSub ? 'italic' : undefined,
                     }}
                   >
-                    {teamRoleLabel}
+                    {activityText}
                   </span>
-                )}
-                <span
-                  className="overflow-hidden text-ellipsis block leading-none"
-                  style={{
-                    fontSize: isSub ? '20px' : '22px',
-                    fontStyle: isSub ? 'italic' : undefined,
-                  }}
-                >
-                  {activityText}
-                </span>
-                {ch.folderName && (
-                  <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
-                    {ch.folderName}
-                  </span>
+                </div>
+                {isSelected && !isSub && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseAgent(id);
+                    }}
+                    title="Close agent"
+                    className="ml-2 shrink-0 leading-none"
+                  >
+                    ×
+                  </Button>
                 )}
               </div>
-              {isSelected && !isSub && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseAgent(id);
+              {progress !== null && (
+                <div
+                  className="overflow-hidden"
+                  style={{
+                    height: 4,
+                    background: TURN_PROGRESS_BAR_BG,
                   }}
-                  title="Close agent"
-                  className="ml-2 shrink-0 leading-none"
                 >
-                  ×
-                </Button>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${progress}%`,
+                      background: hasPermission
+                        ? 'var(--color-status-permission)'
+                        : 'var(--color-status-active)',
+                      transition: 'width 0.3s ease-out',
+                    }}
+                  />
+                </div>
               )}
             </div>
             {isTeamAgent && totalTokens > 0 && (

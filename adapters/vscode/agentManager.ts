@@ -5,7 +5,10 @@ import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import {
+  GLOBAL_SCAN_ACTIVE_MAX_AGE_MS,
+  JSONL_POLL_INTERVAL_MS,
+} from '../../server/src/constants.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -102,6 +105,7 @@ export async function launchNewTerminal(
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
+    turnToolCount: 0,
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
@@ -339,6 +343,7 @@ export function restoreAgents(
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,
+      turnToolCount: 0,
       lastDataAt: 0,
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
@@ -474,6 +479,156 @@ export function restoreAgents(
       waitingTimers,
       permissionTimers,
       () => store.persist(),
+    );
+  }
+}
+
+/**
+ * Detect and adopt existing Claude Code terminals that were opened before the extension started.
+ *
+ * Matches unowned terminals whose name contains "claude" to recent JSONL files
+ * in the current workspace project dir (modified within GLOBAL_SCAN_ACTIVE_MAX_AGE_MS).
+ */
+export function adoptExistingTerminals(
+  nextAgentIdRef: { current: number },
+  store: AgentStateStore,
+  activeAgentIdRef: { current: number | null },
+  knownJsonlFiles: Set<string>,
+  fileWatchers: Map<number, fs.FSWatcher>,
+  pollingTimers: Map<number, ReturnType<typeof setInterval>>,
+  waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
+  permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
+): void {
+  let projectDir: string;
+  try {
+    projectDir = getProjectDirPath();
+  } catch {
+    return;
+  }
+
+  const ownedTerminals = new Set<vscode.Terminal>();
+  const ownedJsonlFiles = new Set<string>();
+  for (const agent of store.values()) {
+    if (agent.terminalRef) {
+      ownedTerminals.add(agent.terminalRef);
+    }
+    ownedJsonlFiles.add(agent.jsonlFile);
+  }
+
+  const candidateTerminals = vscode.window.terminals.filter((t) => {
+    if (ownedTerminals.has(t)) return false;
+    return t.name.toLowerCase().includes('claude');
+  });
+
+  if (candidateTerminals.length === 0) {
+    console.log('[Pixel Agents] adoptExistingTerminals: no unowned Claude Code terminals found');
+    return;
+  }
+
+  let jsonlFiles: Array<{ file: string; mtime: number }>;
+  try {
+    jsonlFiles = fs
+      .readdirSync(projectDir)
+      .filter((f) => f.endsWith('.jsonl'))
+      .map((f) => {
+        const fullPath = path.join(projectDir, f);
+        try {
+          const stat = fs.statSync(fullPath);
+          return { file: fullPath, mtime: stat.mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is { file: string; mtime: number } => entry !== null)
+      .sort((a, b) => b.mtime - a.mtime);
+  } catch {
+    return;
+  }
+
+  const recentFiles = jsonlFiles.filter(
+    (f) => Date.now() - f.mtime < GLOBAL_SCAN_ACTIVE_MAX_AGE_MS && !ownedJsonlFiles.has(f.file),
+  );
+
+  if (recentFiles.length === 0) {
+    console.log('[Pixel Agents] adoptExistingTerminals: no active JSONL files in project dir');
+    return;
+  }
+
+  const adoptCount = Math.min(candidateTerminals.length, recentFiles.length);
+  if (candidateTerminals.length !== recentFiles.length) {
+    console.log(
+      `[Pixel Agents] adoptExistingTerminals: count mismatch — ${candidateTerminals.length} terminals vs ${recentFiles.length} active JSONL files. Adopting ${adoptCount}.`,
+    );
+  }
+
+  let adopted = 0;
+  for (let i = 0; i < adoptCount; i++) {
+    const terminal = candidateTerminals[i];
+    const jsonl = recentFiles[i];
+
+    knownJsonlFiles.add(jsonl.file);
+
+    const id = nextAgentIdRef.current++;
+    const sessionId = path.basename(jsonl.file, '.jsonl');
+    const agent: AgentState = {
+      id,
+      sessionId,
+      terminalRef: terminal,
+      isExternal: false,
+      projectDir,
+      jsonlFile: jsonl.file,
+      fileOffset: 0,
+      lineBuffer: '',
+      activeToolIds: new Set(),
+      activeToolStatuses: new Map(),
+      activeToolNames: new Map(),
+      activeSubagentToolIds: new Map(),
+      activeSubagentToolNames: new Map(),
+      backgroundAgentToolIds: new Set(),
+      isWaiting: false,
+      permissionSent: false,
+      hadToolsInTurn: false,
+      turnToolCount: 0,
+      lastDataAt: 0,
+      linesProcessed: 0,
+      seenUnknownRecordTypes: new Set(),
+      hookDelivered: false,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
+
+    store.set(id, agent);
+    activeAgentIdRef.current = id;
+
+    console.log(
+      `[Pixel Agents] Agent ${id}: auto-adopted terminal "${terminal.name}" → ${path.basename(jsonl.file)}`,
+    );
+
+    try {
+      if (fs.existsSync(jsonl.file)) {
+        const stat = fs.statSync(jsonl.file);
+        agent.fileOffset = stat.size;
+        startFileWatching(
+          id,
+          jsonl.file,
+          store,
+          fileWatchers,
+          pollingTimers,
+          waitingTimers,
+          permissionTimers,
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+
+    adopted++;
+  }
+
+  if (adopted > 0) {
+    store.persist();
+    console.log(
+      `[Pixel Agents] Auto-adopted ${adopted} existing Claude Code terminal(s) for this project`,
     );
   }
 }

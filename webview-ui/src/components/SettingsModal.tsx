@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import type { IdeType } from '../hooks/useExtensionMessages.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
@@ -19,7 +20,14 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  ideType: IdeType;
 }
+
+const ideDisplayNames: Record<IdeType, string> = {
+  vscode: 'VS Code',
+  cursor: 'Cursor',
+  unknown: 'Unknown IDE',
+};
 
 export function SettingsModal({
   isOpen,
@@ -33,6 +41,7 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  ideType,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
 
@@ -114,6 +123,9 @@ export function SettingsModal({
         onChange={onToggleAlwaysShowOverlay}
       />
       <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
+      <div className="pt-6 mt-4 border-t border-border text-xs text-text-muted px-10">
+        Running in {ideDisplayNames[ideType]}
+      </div>
     </Modal>
   );
 }

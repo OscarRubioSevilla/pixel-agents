@@ -16,6 +16,7 @@ export type ServerMessage =
   | AgentStatus
   | AgentToolStart
   | AgentToolDone
+  | AgentTurnProgress
   | AgentToolsClear
   | AgentToolPermission
   | AgentToolPermissionClear
@@ -33,6 +34,7 @@ export type ServerMessage =
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
   | WorkspaceFolders
+  | IdeInfo
   | AgentDiagnostics;
 
 export type ClientMessage =
@@ -114,6 +116,12 @@ export interface AgentToolDone {
   type: 'agentToolDone';
   id: number;
   toolId: string;
+}
+
+export interface AgentTurnProgress {
+  type: 'agentTurnProgress';
+  id: number;
+  toolCount: number;
 }
 
 export interface AgentToolsClear {
@@ -256,6 +264,11 @@ export interface WorkspaceFolders {
 export interface WorkspaceFolder {
   name: string;
   path: string;
+}
+
+export interface IdeInfo {
+  type: 'ideInfo';
+  ide: 'vscode' | 'cursor' | 'unknown';
 }
 
 export interface AgentDiagnostics {

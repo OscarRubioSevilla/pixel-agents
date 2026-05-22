@@ -1,6 +1,16 @@
 # Pixel Agents — Compressed Reference
 
-VS Code extension with embedded React webview: pixel art office where AI agents (Claude Code terminals) are animated characters.
+VS Code / Cursor IDE extension with embedded React webview: pixel art office where AI agents (Claude Code terminals) are animated characters.
+
+## Cursor IDE Compatibility
+
+Extension works in both VS Code and Cursor IDE (a VS Code fork). Key adaptations:
+
+- `engines.vscode` lowered to `^1.85.0` for Cursor compatibility (Cursor is based on VS Code ~1.93.x)
+- `adapters/vscode/ideDetector.ts` detects IDE at runtime via `vscode.env.appName`
+- IDE type passed to webview via `ideInfo` message, displayed in Settings modal
+- To install in Cursor: package as VSIX (`vsce package`) and install via Cursor's "Install from VSIX" option
+- `adoptExistingTerminals()` in `adapters/vscode/agentManager.ts` matches pre-open Claude terminals to recent JSONL files on startup
 
 ## Architecture
 
