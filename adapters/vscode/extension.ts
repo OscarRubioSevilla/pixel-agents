@@ -7,12 +7,16 @@ import {
   CONFIG_KEY_AUTO_SHOW_PANEL,
   VIEW_ID,
 } from './constants.js';
+import { detectIde, getIdeDisplayName } from './ideDetector.js';
 import { migrateVsCodeState } from './migrateVsCodeState.js';
 import { PixelAgentsViewProvider } from './PixelAgentsViewProvider.js';
 
 let providerInstance: PixelAgentsViewProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
+  const ide = detectIde();
+  const ideName = getIdeDisplayName(ide);
+  console.log(`[Pixel Agents] Activating in ${ideName} (appName: "${vscode.env.appName}")`);
   console.log(`[Pixel Agents] PIXEL_AGENTS_DEBUG=${process.env.PIXEL_AGENTS_DEBUG ?? 'not set'}`);
 
   // Shared file-backed state adapter (VS Code namespace in ~/.pixel-agents/config.json).
@@ -22,7 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
   // activate. Warns until all keys are cleared (e.g. if a disk error blocks writes).
   migrateVsCodeState(context, adapter);
 
-  const provider = new PixelAgentsViewProvider(context, adapter);
+  const provider = new PixelAgentsViewProvider(context, adapter, ide);
   providerInstance = provider;
 
   context.subscriptions.push(vscode.window.registerWebviewViewProvider(VIEW_ID, provider));

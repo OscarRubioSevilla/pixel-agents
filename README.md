@@ -50,13 +50,25 @@ This is the source code for the free Pixel Agents extension for VS Code — inst
 
 ## Requirements
 
-- VS Code 1.105.0 or later
+- **VS Code 1.85.0+** or **Cursor IDE** (any recent version)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - **Platform**: Windows, Linux, and macOS are supported
 
 ## Getting Started
 
-If you just want to use Pixel Agents, the easiest way is to download the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents). If you want to play with the code, develop, or contribute, then:
+If you just want to use Pixel Agents, install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents).
+
+### Install on Cursor IDE
+
+Cursor does not include the VS Code Marketplace. Install manually via a `.vsix` file:
+
+1. Build or download a VSIX (`npx @vscode/vsce package --allow-missing-repository`)
+2. In Cursor: **Command Palette** → **Extensions: Install from VSIX...**
+3. Or run: `cursor --install-extension pixel-agents-x.x.x.vsix`
+
+> Manually installed extensions do not auto-update.
+
+If you want to play with the code, develop, or contribute:
 
 ### Install from source
 

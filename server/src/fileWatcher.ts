@@ -508,6 +508,7 @@ function adoptTerminalForFile(
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
+    turnToolCount: 0,
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
@@ -669,6 +670,7 @@ export function scanForTeammateFiles(
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,
+      turnToolCount: 0,
       // Keep hookDelivered false: teammates need JSONL-based tool tracking
       // (agentToolStart messages). Permission events are routed from the lead's
       // hooks via handlePermissionRequest forwarding.
@@ -872,6 +874,7 @@ export function adoptExternalSessionFromHook(
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,
+      turnToolCount: 0,
       hookDelivered: true,
       hooksOnly: true,
       lastDataAt: Date.now(),
@@ -932,6 +935,7 @@ function adoptExternalSession(
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
+    turnToolCount: 0,
     hookDelivered: false,
     lastDataAt: Date.now(),
     linesProcessed: 0,

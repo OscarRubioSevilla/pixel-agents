@@ -91,6 +91,7 @@ components:
         - $ref: '#/components/schemas/AgentToolsClear'
         - $ref: '#/components/schemas/AgentToolPermission'
         - $ref: '#/components/schemas/AgentToolPermissionClear'
+        - $ref: '#/components/schemas/AgentTurnProgress'
         # Sub-agent activity
         - $ref: '#/components/schemas/SubagentToolStart'
         - $ref: '#/components/schemas/SubagentToolDone'
@@ -110,6 +111,7 @@ components:
         - $ref: '#/components/schemas/SettingsLoaded'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
         - $ref: '#/components/schemas/WorkspaceFolders'
+        - $ref: '#/components/schemas/IdeInfo'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
       discriminator: type
@@ -279,6 +281,19 @@ components:
           type: integer
         toolId:
           type: string
+
+    AgentTurnProgress:
+      description: Turn progress estimate based on completed tool count.
+      type: object
+      additionalProperties: false
+      required: [type, id, toolCount]
+      properties:
+        type:
+          const: agentTurnProgress
+        id:
+          type: integer
+        toolCount:
+          type: integer
 
     AgentToolsClear:
       description: All foreground tools cleared (turn end). Background agents preserved.
@@ -563,6 +578,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceFolder'
+
+    IdeInfo:
+      description: Host IDE type (VS Code vs Cursor). VS Code adapter only.
+      type: object
+      additionalProperties: false
+      required: [type, ide]
+      properties:
+        type:
+          const: ideInfo
+        ide:
+          type: string
+          enum: [vscode, cursor, unknown]
 
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).

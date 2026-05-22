@@ -59,6 +59,7 @@ function App() {
     selectedAgent,
     agentTools,
     agentStatuses,
+    agentProgress,
     subagentTools,
     subagentCharacters,
     layoutReady,
@@ -74,6 +75,7 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    ideType,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -245,6 +247,7 @@ function App() {
             officeState={officeState}
             agents={agents}
             agentTools={agentTools}
+            agentProgress={agentProgress}
             subagentCharacters={subagentCharacters}
             containerRef={containerRef}
             zoom={editor.zoom}
@@ -364,6 +367,7 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        ideType={ideType}
       />
 
       {showMigrationNotice && (

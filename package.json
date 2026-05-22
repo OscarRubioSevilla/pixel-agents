@@ -1,7 +1,7 @@
 {
   "name": "pixel-agents",
   "displayName": "Pixel Agents",
-  "description": "Pixel art office where your Claude Code agents come to life as animated characters",
+  "description": "Pixel art office where your Claude Code agents come to life as animated characters — works in VS Code and Cursor IDE",
   "version": "1.3.0",
   "publisher": "pablodelucca",
   "repository": {
@@ -11,10 +11,20 @@
   "icon": "icon.png",
   "license": "MIT",
   "engines": {
-    "vscode": "^1.105.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "pixel-art",
+    "claude",
+    "ai-agents",
+    "cursor",
+    "cursor-ide",
+    "vscode",
+    "claude-code"
   ],
   "activationEvents": [
     "onStartupFinished"

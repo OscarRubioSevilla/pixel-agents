@@ -32,6 +32,7 @@ import {
 import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
+  adoptExistingTerminals,
   getProjectDirPath,
   launchNewTerminal,
   restoreAgents,
@@ -50,6 +51,7 @@ import {
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
 } from './constants.js';
+import type { IdeType } from './ideDetector.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
@@ -79,10 +81,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // session, even though webviewReady fires on every panel focus.
   private autoSpawnAttempted = false;
 
+  readonly ideType: IdeType;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
+    ideType: IdeType,
   ) {
+    this.ideType = ideType;
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
@@ -293,6 +299,26 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.registerAgent(agent.sessionId, agent.id);
         }
 
+        // Adopt existing Claude Code terminals not previously tracked
+        const registeredSessions = new Set(
+          [...this.store.values()].map((agent) => agent.sessionId),
+        );
+        adoptExistingTerminals(
+          this.store.nextAgentId,
+          this.store,
+          this.runtime.activeAgentId,
+          this.runtime.knownJsonlFiles,
+          this.runtime.fileWatchers,
+          this.runtime.pollingTimers,
+          this.runtime.waitingTimers,
+          this.runtime.permissionTimers,
+        );
+        for (const agent of this.store.values()) {
+          if (!registeredSessions.has(agent.sessionId)) {
+            this.runtime.registerAgent(agent.sessionId, agent.id);
+          }
+        }
+
         // Auto-spawn: launch one agent on first webviewReady if the setting is
         // enabled and no agents are currently running.
         if (
@@ -365,6 +391,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
         });
+        this.webview?.postMessage({ type: 'ideInfo', ide: this.ideType });
 
         // Send workspace folders to webview (only when multi-root)
         const wsFolders = vscode.workspace.workspaceFolders;
