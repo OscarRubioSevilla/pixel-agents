@@ -11,6 +11,10 @@ export interface AdapterSettings {
   watchAllSessions: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
+  /** Agent source: auto resolves from IDE (Cursor → cursor, VS Code → claude) */
+  agentSource: 'auto' | 'cursor' | 'claude' | 'both';
+  /** Cursor hooks toggle (when agent source includes cursor) */
+  cursorHooksEnabled: boolean;
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`. */
@@ -21,6 +25,8 @@ export const ADAPTER_SETTING_KEYS = [
   'watchAllSessions',
   'hooksEnabled',
   'hooksInfoShown',
+  'agentSource',
+  'cursorHooksEnabled',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -41,6 +47,8 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,
+  agentSource: 'auto',
+  cursorHooksEnabled: true,
 };
 
 function getConfigFilePath(): string {
@@ -75,6 +83,17 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.hooksInfoShown === 'boolean'
         ? obj.hooksInfoShown
         : DEFAULT_ADAPTER_SETTINGS.hooksInfoShown,
+    agentSource:
+      obj.agentSource === 'auto' ||
+      obj.agentSource === 'cursor' ||
+      obj.agentSource === 'claude' ||
+      obj.agentSource === 'both'
+        ? obj.agentSource
+        : DEFAULT_ADAPTER_SETTINGS.agentSource,
+    cursorHooksEnabled:
+      typeof obj.cursorHooksEnabled === 'boolean'
+        ? obj.cursorHooksEnabled
+        : DEFAULT_ADAPTER_SETTINGS.cursorHooksEnabled,
   };
 }
 

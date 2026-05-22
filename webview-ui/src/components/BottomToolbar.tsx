@@ -13,6 +13,7 @@ interface BottomToolbarProps {
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
   workspaceFolders: WorkspaceFolder[];
+  usesClaudeTerminal?: boolean;
 }
 
 export function BottomToolbar({
@@ -22,6 +23,7 @@ export function BottomToolbar({
   isSettingsOpen,
   onToggleSettings,
   workspaceFolders,
+  usesClaudeTerminal = true,
 }: BottomToolbarProps) {
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [isBypassMenuOpen, setIsBypassMenuOpen] = useState(false);
@@ -53,7 +55,7 @@ export function BottomToolbar({
   };
 
   const handleAgentHover = () => {
-    if (!isFolderPickerOpen) {
+    if (usesClaudeTerminal && !isFolderPickerOpen) {
       setIsBypassMenuOpen(true);
     }
   };
@@ -102,7 +104,7 @@ export function BottomToolbar({
           >
             + Agent
           </Button>
-          <Dropdown isOpen={isBypassMenuOpen}>
+          <Dropdown isOpen={isBypassMenuOpen && usesClaudeTerminal}>
             <DropdownItem onClick={() => handleBypassSelect(true)}>
               Skip permissions mode <span className="text-2xs text-warning">⚠</span>
             </DropdownItem>

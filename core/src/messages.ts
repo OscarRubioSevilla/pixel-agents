@@ -16,10 +16,10 @@ export type ServerMessage =
   | AgentStatus
   | AgentToolStart
   | AgentToolDone
-  | AgentTurnProgress
   | AgentToolsClear
   | AgentToolPermission
   | AgentToolPermissionClear
+  | AgentTurnProgress
   | SubagentToolStart
   | SubagentToolDone
   | SubagentClear
@@ -32,6 +32,7 @@ export type ServerMessage =
   | FloorTilesLoaded
   | WallTilesLoaded
   | SettingsLoaded
+  | AgentSourceUpdated
   | ExternalAssetDirectoriesUpdated
   | WorkspaceFolders
   | IdeInfo
@@ -48,6 +49,8 @@ export type ClientMessage =
   | SetLastSeenVersion
   | SetAlwaysShowLabels
   | SetHooksEnabled
+  | SetCursorHooksEnabled
+  | SetAgentSource
   | SetHooksInfoShown
   | SetWatchAllSessions
   | ExportLayout
@@ -118,12 +121,6 @@ export interface AgentToolDone {
   toolId: string;
 }
 
-export interface AgentTurnProgress {
-  type: 'agentTurnProgress';
-  id: number;
-  toolCount: number;
-}
-
 export interface AgentToolsClear {
   type: 'agentToolsClear';
   id: number;
@@ -137,6 +134,12 @@ export interface AgentToolPermission {
 export interface AgentToolPermissionClear {
   type: 'agentToolPermissionClear';
   id: number;
+}
+
+export interface AgentTurnProgress {
+  type: 'agentTurnProgress';
+  id: number;
+  toolCount: number;
 }
 
 export interface SubagentToolStart {
@@ -247,9 +250,29 @@ export interface SettingsLoaded {
   watchAllSessions: boolean;
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
+  cursorHooksEnabled?: boolean;
+  agentSource?: AgentSource;
+  effectiveAgentSource?: AnonymousSchema_136;
+  usesClaudeTerminal?: boolean;
+  usesCursorHooks?: boolean;
+  usesClaudeHooks?: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
 }
+
+export type AgentSource = 'auto' | 'cursor' | 'claude' | 'both';
+
+export type AnonymousSchema_136 = 'cursor' | 'claude' | 'both';
+
+export interface AgentSourceUpdated {
+  type: 'agentSourceUpdated';
+  agentSource: AnonymousSchema_144;
+  usesClaudeTerminal: boolean;
+  usesCursorHooks: boolean;
+  usesClaudeHooks: boolean;
+}
+
+export type AnonymousSchema_144 = 'cursor' | 'claude' | 'both';
 
 export interface ExternalAssetDirectoriesUpdated {
   type: 'externalAssetDirectoriesUpdated';
@@ -268,8 +291,10 @@ export interface WorkspaceFolder {
 
 export interface IdeInfo {
   type: 'ideInfo';
-  ide: 'vscode' | 'cursor' | 'unknown';
+  ide: AnonymousSchema_156;
 }
+
+export type AnonymousSchema_156 = 'vscode' | 'cursor' | 'unknown';
 
 export interface AgentDiagnostics {
   type: 'agentDiagnostics';
@@ -330,6 +355,16 @@ export interface SetAlwaysShowLabels {
 export interface SetHooksEnabled {
   type: 'setHooksEnabled';
   enabled: boolean;
+}
+
+export interface SetCursorHooksEnabled {
+  type: 'setCursorHooksEnabled';
+  enabled: boolean;
+}
+
+export interface SetAgentSource {
+  type: 'setAgentSource';
+  source: AgentSource;
 }
 
 export interface SetHooksInfoShown {

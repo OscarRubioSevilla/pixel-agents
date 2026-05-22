@@ -20,6 +20,12 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  cursorHooksEnabled: boolean;
+  onToggleCursorHooksEnabled: () => void;
+  agentSource: string;
+  onAgentSourceChange: (source: string) => void;
+  usesClaudeHooks: boolean;
+  usesCursorHooks: boolean;
   ideType: IdeType;
 }
 
@@ -41,6 +47,12 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  cursorHooksEnabled,
+  onToggleCursorHooksEnabled,
+  agentSource,
+  onAgentSourceChange,
+  usesClaudeHooks,
+  usesCursorHooks,
   ideType,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
@@ -112,11 +124,33 @@ export function SettingsModal({
         checked={watchAllSessions}
         onChange={onToggleWatchAllSessions}
       />
-      <Checkbox
-        label="Instant Detection (Hooks)"
-        checked={hooksEnabled}
-        onChange={onToggleHooksEnabled}
-      />
+      <div className="py-4 px-10 flex flex-col gap-4">
+        <label className="text-sm text-text-muted">Agent Source</label>
+        <select
+          value={agentSource}
+          onChange={(e) => onAgentSourceChange(e.target.value)}
+          className="bg-btn-bg border-2 border-border text-text px-8 py-4 text-sm"
+        >
+          <option value="auto">Auto (detect IDE)</option>
+          <option value="cursor">Cursor Agent</option>
+          <option value="claude">Claude Code</option>
+          <option value="both">Both (Claude + Cursor)</option>
+        </select>
+      </div>
+      {usesClaudeHooks && (
+        <Checkbox
+          label="Instant Detection (Claude Hooks)"
+          checked={hooksEnabled}
+          onChange={onToggleHooksEnabled}
+        />
+      )}
+      {usesCursorHooks && (
+        <Checkbox
+          label="Instant Detection (Cursor Hooks)"
+          checked={cursorHooksEnabled}
+          onChange={onToggleCursorHooksEnabled}
+        />
+      )}
       <Checkbox
         label="Always Show Labels"
         checked={alwaysShowOverlay}

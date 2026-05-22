@@ -109,6 +109,7 @@ components:
         - $ref: '#/components/schemas/WallTilesLoaded'
         # Settings & config
         - $ref: '#/components/schemas/SettingsLoaded'
+        - $ref: '#/components/schemas/AgentSourceUpdated'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
         - $ref: '#/components/schemas/WorkspaceFolders'
         - $ref: '#/components/schemas/IdeInfo'
@@ -128,6 +129,8 @@ components:
         - $ref: '#/components/schemas/SetLastSeenVersion'
         - $ref: '#/components/schemas/SetAlwaysShowLabels'
         - $ref: '#/components/schemas/SetHooksEnabled'
+        - $ref: '#/components/schemas/SetCursorHooksEnabled'
+        - $ref: '#/components/schemas/SetAgentSource'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
         - $ref: '#/components/schemas/ExportLayout'
@@ -546,12 +549,52 @@ components:
           type: boolean
         hooksEnabled:
           type: boolean
+        cursorHooksEnabled:
+          type: boolean
+        agentSource:
+          $ref: '#/components/schemas/AgentSource'
+        effectiveAgentSource:
+          type: string
+          enum: [cursor, claude, both]
+        usesClaudeTerminal:
+          type: boolean
+        usesCursorHooks:
+          type: boolean
+        usesClaudeHooks:
+          type: boolean
         hooksInfoShown:
           type: boolean
         externalAssetDirectories:
           type: array
           items:
             type: string
+
+    AgentSourceUpdated:
+      description: Agent source configuration changed at runtime.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - agentSource
+        - usesClaudeTerminal
+        - usesCursorHooks
+        - usesClaudeHooks
+      properties:
+        type:
+          const: agentSourceUpdated
+        agentSource:
+          type: string
+          enum: [cursor, claude, both]
+        usesClaudeTerminal:
+          type: boolean
+        usesCursorHooks:
+          type: boolean
+        usesClaudeHooks:
+          type: boolean
+
+    AgentSource:
+      type: string
+      enum: [auto, cursor, claude, both]
 
     ExternalAssetDirectoriesUpdated:
       description: External asset directory list changed (after add/remove).
@@ -717,6 +760,26 @@ components:
           const: setHooksEnabled
         enabled:
           type: boolean
+
+    SetCursorHooksEnabled:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setCursorHooksEnabled
+        enabled:
+          type: boolean
+
+    SetAgentSource:
+      type: object
+      additionalProperties: false
+      required: [type, source]
+      properties:
+        type:
+          const: setAgentSource
+        source:
+          $ref: '#/components/schemas/AgentSource'
 
     SetHooksInfoShown:
       type: object

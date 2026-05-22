@@ -11,6 +11,8 @@ export interface PersistedAgent {
   sessionId?: string;
   terminalName: string;
   isExternal?: boolean;
+  hooksOnly?: boolean;
+  providerId?: string;
   jsonlFile: string;
   projectDir: string;
   folderName?: string;

@@ -71,14 +71,21 @@ export class AgentRuntime {
 
   constructor(
     private readonly store: AgentStateStore,
-    provider: HookProvider,
+    primaryProvider: HookProvider,
+    additionalProviders: HookProvider[] = [],
   ) {
+    const providers = new Map<string, HookProvider>();
+    providers.set(primaryProvider.id, primaryProvider);
+    for (const provider of additionalProviders) {
+      providers.set(provider.id, provider);
+    }
+
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
-    setHookProvider(provider);
-    setFileWatcherHookProvider(provider);
-    if (provider.team) {
-      setTeamProvider(provider.team);
+    setHookProvider(primaryProvider);
+    setFileWatcherHookProvider(primaryProvider);
+    if (primaryProvider.team) {
+      setTeamProvider(primaryProvider.team);
     }
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
@@ -87,14 +94,15 @@ export class AgentRuntime {
       store,
       this.waitingTimers,
       this.permissionTimers,
-      provider,
+      providers,
+      primaryProvider,
       new SessionRouter(),
       this.watchAllSessions,
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
     this.hookEventHandler.setLifecycleCallbacks({
-      onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
+      onExternalSessionDetected: (sessionId, transcriptPath, cwd, providerId) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
         if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
           return;
@@ -112,6 +120,7 @@ export class AgentRuntime {
           this.permissionTimers,
           () => this.store.persist(),
           (agent) => this.registerAgent(agent.sessionId, agent.id),
+          providerId,
         );
       },
       onSessionClear: (agentId, newSessionId, newTranscriptPath) => {

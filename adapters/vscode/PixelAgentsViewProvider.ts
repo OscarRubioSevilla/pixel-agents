@@ -29,11 +29,17 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
-import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
+import {
+  claudeProvider,
+  copyCursorHookScript,
+  copyHookScript,
+  cursorProvider,
+} from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   adoptExistingTerminals,
   getProjectDirPath,
+  launchCursorAgent,
   launchNewTerminal,
   restoreAgents,
   sendCurrentAgentStatuses,
@@ -43,7 +49,9 @@ import {
 import {
   CONFIG_KEY_AUTO_SHOW_PANEL,
   CONFIG_KEY_AUTO_SPAWN_AGENT,
+  GLOBAL_KEY_AGENT_SOURCE,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+  GLOBAL_KEY_CURSOR_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
@@ -52,6 +60,15 @@ import {
   LAYOUT_REVISION_KEY,
 } from './constants.js';
 import type { IdeType } from './ideDetector.js';
+import {
+  type AgentSource,
+  mergeProviderCapabilities,
+  type ResolvedProviders,
+  resolveProviders,
+  usesClaudeHooks,
+  usesClaudeTerminal,
+  usesCursorHooks,
+} from './providerResolver.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
@@ -82,6 +99,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private autoSpawnAttempted = false;
 
   readonly ideType: IdeType;
+  private resolvedProviders: ResolvedProviders;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -90,6 +108,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.ideType = ideType;
     this.adapter = adapter;
+    this.resolvedProviders = resolveProviders(
+      ideType,
+      adapter.getSetting<AgentSource>(GLOBAL_KEY_AGENT_SOURCE, 'auto'),
+    );
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
       this.webview?.postMessage({
@@ -113,10 +135,39 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     setTerminalAdapter(new VscodeTerminalAdapter());
 
-    // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    const additional = this.resolvedProviders.all.filter(
+      (p) => p.id !== this.resolvedProviders.primary.id,
+    );
+    this.runtime = new AgentRuntime(this.store, this.resolvedProviders.primary, additional);
 
     this.initServer();
+  }
+
+  private syncProviderHooks(): void {
+    const serverConfig = this.pixelAgentsServer?.getConfig();
+    if (!serverConfig) return;
+    const serverUrl = `http://127.0.0.1:${serverConfig.port}`;
+    const { source } = this.resolvedProviders;
+
+    if (
+      usesClaudeHooks(source) &&
+      this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true)
+    ) {
+      void claudeProvider.installHooks(serverUrl, serverConfig.token);
+      copyHookScript(this.context.extensionPath);
+    } else if (usesClaudeHooks(source)) {
+      void claudeProvider.uninstallHooks();
+    }
+
+    if (
+      usesCursorHooks(source) &&
+      this.adapter.getSetting<boolean>(GLOBAL_KEY_CURSOR_HOOKS_ENABLED, true)
+    ) {
+      void cursorProvider.installHooks(serverUrl, serverConfig.token);
+      copyCursorHookScript(this.context.extensionPath);
+    } else if (usesCursorHooks(source)) {
+      void cursorProvider.uninstallHooks();
+    }
   }
 
   private get extensionUri(): vscode.Uri {
@@ -141,10 +192,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Only hook installation/script-copy is gated by the toggle.
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         this.runtime.hooksEnabled.current = hooksEnabled;
-        if (hooksEnabled) {
-          void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-          copyHookScript(this.context.extensionPath);
-        }
+        this.syncProviderHooks();
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
@@ -159,34 +207,42 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'launchAgent') {
-        const prevAgentIds = new Set(this.store.keys());
-        await launchNewTerminal(
-          this.store.nextAgentId,
-          this.store.nextTerminalIndex,
-          this.store,
-          this.runtime.activeAgentId,
-          this.runtime.knownJsonlFiles,
-          this.runtime.fileWatchers,
-          this.runtime.pollingTimers,
-          this.runtime.waitingTimers,
-          this.runtime.permissionTimers,
-          this.runtime.jsonlPollTimers,
-          this.runtime.projectScanTimer,
-          () => this.store.persist(),
-          message.folderPath as string | undefined,
-          message.bypassPermissions as boolean | undefined,
-        );
-        // Register newly created agent(s) with hook handler
-        for (const [id, agent] of this.store) {
-          if (!prevAgentIds.has(id)) {
-            this.runtime.registerAgent(agent.sessionId, id);
+        const { source, primary } = this.resolvedProviders;
+        if (usesClaudeTerminal(source)) {
+          const prevAgentIds = new Set(this.store.keys());
+          await launchNewTerminal(
+            this.store.nextAgentId,
+            this.store.nextTerminalIndex,
+            this.store,
+            this.runtime.activeAgentId,
+            this.runtime.knownJsonlFiles,
+            this.runtime.fileWatchers,
+            this.runtime.pollingTimers,
+            this.runtime.waitingTimers,
+            this.runtime.permissionTimers,
+            this.runtime.jsonlPollTimers,
+            this.runtime.projectScanTimer,
+            () => this.store.persist(),
+            message.folderPath as string | undefined,
+            message.bypassPermissions as boolean | undefined,
+            undefined,
+            primary,
+          );
+          for (const [id, agent] of this.store) {
+            if (!prevAgentIds.has(id)) {
+              this.runtime.registerAgent(agent.sessionId, id);
+            }
           }
+        } else {
+          await launchCursorAgent();
         }
       } else if (message.type === 'focusAgent') {
         const agent = this.store.get(message.id);
         if (agent) {
           if (agent.terminalRef) {
             agent.terminalRef.show();
+          } else if (agent.providerId === 'cursor' || agent.hooksOnly) {
+            void launchCursorAgent();
           } else if (agent.leadAgentId !== undefined) {
             // Teammate (tmux): focus the lead's terminal instead
             const lead = this.store.get(agent.leadAgentId);
@@ -201,9 +257,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           if (agent.terminalRef) {
             agent.terminalRef.dispose();
           } else {
-            // External agent -- remove from tracking and dismiss the file
-            // so the external scanner doesn't re-adopt it
-            this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+            if (agent.jsonlFile) {
+              this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+            }
+            this.runtime.unregisterAgent(agent.sessionId);
             this.runtime.removeAgent(message.id);
           }
         }
@@ -224,18 +281,25 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_ENABLED, enabled);
         this.runtime.hooksEnabled.current = enabled;
-        if (enabled) {
-          const serverConfig = this.pixelAgentsServer?.getConfig();
-          void claudeProvider.installHooks(
-            serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
-            serverConfig?.token ?? '',
-          );
-          copyHookScript(this.context.extensionPath);
-          console.log('[Pixel Agents] Hooks enabled by user');
-        } else {
-          void claudeProvider.uninstallHooks();
-          console.log('[Pixel Agents] Hooks disabled by user');
-        }
+        this.syncProviderHooks();
+        console.log(`[Pixel Agents] Claude hooks ${enabled ? 'enabled' : 'disabled'} by user`);
+      } else if (message.type === 'setCursorHooksEnabled') {
+        const enabled = message.enabled as boolean;
+        this.adapter.setSetting(GLOBAL_KEY_CURSOR_HOOKS_ENABLED, enabled);
+        this.syncProviderHooks();
+        console.log(`[Pixel Agents] Cursor hooks ${enabled ? 'enabled' : 'disabled'} by user`);
+      } else if (message.type === 'setAgentSource') {
+        const source = message.source as AgentSource;
+        this.adapter.setSetting(GLOBAL_KEY_AGENT_SOURCE, source);
+        this.resolvedProviders = resolveProviders(this.ideType, source);
+        this.syncProviderHooks();
+        this.webview?.postMessage({
+          type: 'agentSourceUpdated',
+          agentSource: this.resolvedProviders.source,
+          usesClaudeTerminal: usesClaudeTerminal(this.resolvedProviders.source),
+          usesCursorHooks: usesCursorHooks(this.resolvedProviders.source),
+          usesClaudeHooks: usesClaudeHooks(this.resolvedProviders.source),
+        });
       } else if (message.type === 'setHooksInfoShown') {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
       } else if (message.type === 'setWatchAllSessions') {
@@ -275,10 +339,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
         // Sent once before restoreAgents so characters render with correct animations
         // from the first frame.
+        const caps = mergeProviderCapabilities(this.resolvedProviders.all);
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          readingTools: caps.readingTools,
+          subagentToolNames: caps.subagentToolNames,
         });
         restoreAgents(
           this.adapter,
@@ -299,45 +364,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.registerAgent(agent.sessionId, agent.id);
         }
 
-        // Adopt existing Claude Code terminals not previously tracked
-        const registeredSessions = new Set(
-          [...this.store.values()].map((agent) => agent.sessionId),
-        );
-        adoptExistingTerminals(
-          this.store.nextAgentId,
-          this.store,
-          this.runtime.activeAgentId,
-          this.runtime.knownJsonlFiles,
-          this.runtime.fileWatchers,
-          this.runtime.pollingTimers,
-          this.runtime.waitingTimers,
-          this.runtime.permissionTimers,
-        );
-        for (const agent of this.store.values()) {
-          if (!registeredSessions.has(agent.sessionId)) {
-            this.runtime.registerAgent(agent.sessionId, agent.id);
-          }
-        }
-
-        // Auto-spawn: launch one agent on first webviewReady if the setting is
-        // enabled and no agents are currently running.
-        if (
-          !this.autoSpawnAttempted &&
-          vscode.workspace.getConfiguration().get<boolean>(CONFIG_KEY_AUTO_SPAWN_AGENT, false) &&
-          this.store.size === 0
-        ) {
-          this.autoSpawnAttempted = true;
-          console.log('[Pixel Agents] Auto-spawning agent on startup');
-          // When the user also opted into autoShowPanel, skip terminal.show()
-          // so the panel view stays on Pixel Agents. The terminal still runs;
-          // clicking the character focuses it via the focusAgent handler.
-          const autoShowPanel = vscode.workspace
-            .getConfiguration()
-            .get<boolean>(CONFIG_KEY_AUTO_SHOW_PANEL, false);
-          const prevAgentIds = new Set(this.store.keys());
-          await launchNewTerminal(
+        // Adopt existing Claude Code terminals not previously tracked (claude/both only)
+        if (usesClaudeTerminal(this.resolvedProviders.source)) {
+          const registeredSessions = new Set(
+            [...this.store.values()].map((agent) => agent.sessionId),
+          );
+          adoptExistingTerminals(
             this.store.nextAgentId,
-            this.store.nextTerminalIndex,
             this.store,
             this.runtime.activeAgentId,
             this.runtime.knownJsonlFiles,
@@ -345,25 +378,57 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.pollingTimers,
             this.runtime.waitingTimers,
             this.runtime.permissionTimers,
-            this.runtime.jsonlPollTimers,
-            this.runtime.projectScanTimer,
-            () => this.store.persist(),
-            undefined,
-            undefined,
-            autoShowPanel,
           );
-          for (const [id, agent] of this.store) {
-            if (!prevAgentIds.has(id)) {
-              this.runtime.registerAgent(agent.sessionId, id);
+          for (const agent of this.store.values()) {
+            if (!registeredSessions.has(agent.sessionId)) {
+              this.runtime.registerAgent(agent.sessionId, agent.id);
             }
           }
+        }
+
+        // Auto-spawn: launch one agent on first webviewReady if the setting is enabled
+        if (
+          !this.autoSpawnAttempted &&
+          vscode.workspace.getConfiguration().get<boolean>(CONFIG_KEY_AUTO_SPAWN_AGENT, false) &&
+          this.store.size === 0
+        ) {
+          this.autoSpawnAttempted = true;
+          if (usesClaudeTerminal(this.resolvedProviders.source)) {
+            console.log('[Pixel Agents] Auto-spawning Claude agent on startup');
+            const autoShowPanel = vscode.workspace
+              .getConfiguration()
+              .get<boolean>(CONFIG_KEY_AUTO_SHOW_PANEL, false);
+            const prevAgentIds = new Set(this.store.keys());
+            await launchNewTerminal(
+              this.store.nextAgentId,
+              this.store.nextTerminalIndex,
+              this.store,
+              this.runtime.activeAgentId,
+              this.runtime.knownJsonlFiles,
+              this.runtime.fileWatchers,
+              this.runtime.pollingTimers,
+              this.runtime.waitingTimers,
+              this.runtime.permissionTimers,
+              this.runtime.jsonlPollTimers,
+              this.runtime.projectScanTimer,
+              () => this.store.persist(),
+              undefined,
+              undefined,
+              autoShowPanel,
+              this.resolvedProviders.primary,
+            );
+            for (const [id, agent] of this.store) {
+              if (!prevAgentIds.has(id)) {
+                this.runtime.registerAgent(agent.sessionId, id);
+              }
+            }
+          } else {
+            console.log('[Pixel Agents] Cursor mode: skipping auto-spawn (use Composer)');
+          }
         } else {
-          // Mark as attempted even when skipping, so subsequent panel focuses
-          // (which retrigger webviewReady) never auto-spawn unexpectedly.
           this.autoSpawnAttempted = true;
         }
 
-        // Send persisted settings to webview
         const soundEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
         const lastSeenVersion = this.adapter.getSetting<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
         const extensionVersion =
@@ -378,6 +443,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         );
         this.runtime.watchAllSessions.current = watchAllSessions;
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
+        const cursorHooksEnabled = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_CURSOR_HOOKS_ENABLED,
+          true,
+        );
+        const agentSource = this.adapter.getSetting<AgentSource>(GLOBAL_KEY_AGENT_SOURCE, 'auto');
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
         const config = readConfig();
         this.webview?.postMessage({
@@ -388,6 +458,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           watchAllSessions,
           alwaysShowLabels,
           hooksEnabled,
+          cursorHooksEnabled,
+          agentSource,
+          effectiveAgentSource: this.resolvedProviders.source,
+          usesClaudeTerminal: usesClaudeTerminal(this.resolvedProviders.source),
+          usesCursorHooks: usesCursorHooks(this.resolvedProviders.source),
+          usesClaudeHooks: usesClaudeHooks(this.resolvedProviders.source),
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
         });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { AgentSource } from '../../core/src/messages.js';
 import { toMajorMinor } from './changelogData.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
@@ -74,6 +75,13 @@ function App() {
     alwaysShowLabels,
     hooksEnabled,
     setHooksEnabled,
+    cursorHooksEnabled,
+    setCursorHooksEnabled,
+    agentSource,
+    setAgentSource,
+    usesClaudeTerminal,
+    usesCursorHooks,
+    usesClaudeHooks,
     hooksInfoShown,
     ideType,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
@@ -332,6 +340,7 @@ function App() {
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}
         workspaceFolders={workspaceFolders}
+        usesClaudeTerminal={usesClaudeTerminal}
       />
 
       <VersionIndicator
@@ -367,6 +376,19 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        cursorHooksEnabled={cursorHooksEnabled}
+        onToggleCursorHooksEnabled={() => {
+          const newVal = !cursorHooksEnabled;
+          setCursorHooksEnabled(newVal);
+          transport.send({ type: 'setCursorHooksEnabled', enabled: newVal });
+        }}
+        agentSource={agentSource}
+        onAgentSourceChange={(source) => {
+          setAgentSource(source);
+          transport.send({ type: 'setAgentSource', source: source as AgentSource });
+        }}
+        usesClaudeHooks={usesClaudeHooks}
+        usesCursorHooks={usesCursorHooks}
         ideType={ideType}
       />
 

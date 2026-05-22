@@ -76,6 +76,13 @@ interface ExtensionMessageState {
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
+  cursorHooksEnabled: boolean;
+  setCursorHooksEnabled: (v: boolean) => void;
+  agentSource: string;
+  setAgentSource: (v: string) => void;
+  usesClaudeTerminal: boolean;
+  usesCursorHooks: boolean;
+  usesClaudeHooks: boolean;
   hooksInfoShown: boolean;
   ideType: IdeType;
 }
@@ -114,6 +121,11 @@ export function useExtensionMessages(
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
+  const [cursorHooksEnabled, setCursorHooksEnabled] = useState(true);
+  const [agentSource, setAgentSource] = useState('auto');
+  const [usesClaudeTerminal, setUsesClaudeTerminal] = useState(true);
+  const [usesCursorHooks, setUsesCursorHooks] = useState(false);
+  const [usesClaudeHooks, setUsesClaudeHooks] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [ideType, setIdeType] = useState<IdeType>('vscode');
   const [agentProgress, setAgentProgress] = useState<Record<number, AgentProgress>>({});
@@ -496,6 +508,24 @@ export function useExtensionMessages(
         if (typeof msg.hooksEnabled === 'boolean') {
           setHooksEnabled(msg.hooksEnabled as boolean);
         }
+        if (typeof msg.cursorHooksEnabled === 'boolean') {
+          setCursorHooksEnabled(msg.cursorHooksEnabled as boolean);
+        }
+        if (typeof msg.agentSource === 'string') {
+          setAgentSource(msg.agentSource as string);
+        }
+        if (typeof msg.usesClaudeTerminal === 'boolean') {
+          setUsesClaudeTerminal(msg.usesClaudeTerminal as boolean);
+        }
+        if (typeof msg.usesCursorHooks === 'boolean') {
+          setUsesCursorHooks(msg.usesCursorHooks as boolean);
+        }
+        if (typeof msg.usesClaudeHooks === 'boolean') {
+          setUsesClaudeHooks(msg.usesClaudeHooks as boolean);
+        }
+        if (typeof msg.effectiveAgentSource === 'string') {
+          setAgentSource(msg.effectiveAgentSource as string);
+        }
         if (typeof msg.hooksInfoShown === 'boolean') {
           setHooksInfoShown(msg.hooksInfoShown as boolean);
         }
@@ -507,6 +537,19 @@ export function useExtensionMessages(
         }
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
+        }
+      } else if (msg.type === 'agentSourceUpdated') {
+        if (typeof msg.agentSource === 'string') {
+          setAgentSource(msg.agentSource as string);
+        }
+        if (typeof msg.usesClaudeTerminal === 'boolean') {
+          setUsesClaudeTerminal(msg.usesClaudeTerminal as boolean);
+        }
+        if (typeof msg.usesCursorHooks === 'boolean') {
+          setUsesCursorHooks(msg.usesCursorHooks as boolean);
+        }
+        if (typeof msg.usesClaudeHooks === 'boolean') {
+          setUsesClaudeHooks(msg.usesClaudeHooks as boolean);
         }
       } else if (msg.type === 'ideInfo') {
         setIdeType(msg.ide as IdeType);
@@ -566,6 +609,13 @@ export function useExtensionMessages(
     alwaysShowLabels,
     hooksEnabled,
     setHooksEnabled,
+    cursorHooksEnabled,
+    setCursorHooksEnabled,
+    agentSource,
+    setAgentSource,
+    usesClaudeTerminal,
+    usesCursorHooks,
+    usesClaudeHooks,
     hooksInfoShown,
     ideType,
   };

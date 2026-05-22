@@ -812,6 +812,7 @@ export function adoptExternalSessionFromHook(
 
   persistAgents: () => void,
   onAgentCreated?: (agent: AgentState) => void,
+  providerId = 'claude',
 ): void {
   if (transcriptPath) {
     // File-based provider (Claude, Codex): adopt with JSONL file watching
@@ -850,10 +851,11 @@ export function adoptExternalSessionFromHook(
     if (adoptedAgent) {
       adoptedAgent.sessionId = sessionId;
       adoptedAgent.hookDelivered = true;
+      adoptedAgent.providerId = providerId;
       onAgentCreated?.(adoptedAgent);
     }
   } else {
-    // Hooks-only provider (OpenCode, Copilot): no transcript file, all state from hooks
+    // Hooks-only provider (Cursor, Copilot): no transcript file, all state from hooks
     const id = nextAgentIdRef.current++;
     const folderName = cwd ? path.basename(cwd) : undefined;
     const agent: AgentState = {
@@ -877,6 +879,7 @@ export function adoptExternalSessionFromHook(
       turnToolCount: 0,
       hookDelivered: true,
       hooksOnly: true,
+      providerId,
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),

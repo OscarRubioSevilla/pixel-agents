@@ -13,3 +13,5 @@
 
 export { claudeProvider } from './hook/claude/claude.js';
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export { cursorProvider } from './hook/cursor/cursor.js';
+export { copyHookScript as copyCursorHookScript } from './hook/cursor/cursorHookInstaller.js';

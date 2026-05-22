@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import {
   GLOBAL_SCAN_ACTIVE_MAX_AGE_MS,
@@ -17,22 +18,30 @@ import {
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
+import { CURSOR_COMPOSER_COMMAND } from '../../server/src/providers/hook/cursor/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState, PersistedAgent } from '../../server/src/types.js';
 
-export function getProjectDirPath(cwd?: string): string {
-  // Fall back to home directory when no workspace folder is open (common on Linux/macOS
-  // when VS Code is launched without a folder). The provider's getSessionDirs already
-  // implements the Windows case-insensitive fallback for drive-letter casing.
+export function getProjectDirPath(cwd?: string, provider: HookProvider = claudeProvider): string {
   const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-  const dirs = claudeProvider.getSessionDirs?.(workspacePath) ?? [];
+  const dirs = provider.getSessionDirs?.(workspacePath) ?? [];
   if (dirs.length === 0) {
-    throw new Error('claudeProvider.getSessionDirs returned no directories');
+    throw new Error(`${provider.id} provider getSessionDirs returned no directories`);
   }
   const projectDir = dirs[0];
   console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${projectDir}`);
   return projectDir;
+}
+
+export async function launchCursorAgent(): Promise<void> {
+  try {
+    await vscode.commands.executeCommand(CURSOR_COMPOSER_COMMAND);
+  } catch {
+    void vscode.window.showInformationMessage(
+      'Abre Cursor Agent (Cmd+I / Ctrl+I). Pixel Agents detectará la sesión automáticamente vía hooks.',
+    );
+  }
 }
 
 export async function launchNewTerminal(
@@ -51,6 +60,7 @@ export async function launchNewTerminal(
   folderPath?: string,
   bypassPermissions?: boolean,
   suppressShow?: boolean,
+  provider: HookProvider = claudeProvider,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
@@ -72,13 +82,13 @@ export async function launchNewTerminal(
   }
 
   const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  const launch = provider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
   if (!launch) {
-    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
+    throw new Error(`${provider.id} provider buildLaunchCommand is not implemented`);
   }
   terminal.sendText([launch.command, ...launch.args].join(' '));
 
-  const projectDir = getProjectDirPath(cwd);
+  const projectDir = getProjectDirPath(cwd, provider);
 
   // Pre-register expected JSONL file so project scan won't treat it as a /clear file
   const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
@@ -111,6 +121,7 @@ export async function launchNewTerminal(
     seenUnknownRecordTypes: new Set(),
     folderName,
     hookDelivered: false,
+    providerId: provider.id,
     inputTokens: 0,
     outputTokens: 0,
   };
@@ -266,6 +277,8 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       sessionId: agent.sessionId,
       terminalName: agent.terminalRef?.name ?? '',
       isExternal: agent.isExternal || undefined,
+      hooksOnly: agent.hooksOnly || undefined,
+      providerId: agent.providerId,
       jsonlFile: agent.jsonlFile,
       projectDir: agent.projectDir,
       folderName: agent.folderName,
@@ -311,13 +324,17 @@ export function restoreAgents(
 
     let terminal: vscode.Terminal | undefined;
     const isExternal = p.isExternal ?? false;
+    const hooksOnly = p.hooksOnly ?? false;
 
     if (isExternal) {
-      // External agents — restore if JSONL file still exists on disk
-      try {
-        if (!fs.existsSync(p.jsonlFile)) continue;
-      } catch {
-        continue;
+      if (hooksOnly) {
+        // Hooks-only external agents — restore without transcript file
+      } else {
+        try {
+          if (!p.jsonlFile || !fs.existsSync(p.jsonlFile)) continue;
+        } catch {
+          continue;
+        }
       }
     } else {
       // Terminal agents — find matching terminal by name
@@ -327,9 +344,12 @@ export function restoreAgents(
 
     const agent: AgentState = {
       id: p.id,
-      sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
+      sessionId:
+        p.sessionId || (p.jsonlFile ? path.basename(p.jsonlFile, '.jsonl') : `restored-${p.id}`),
       terminalRef: terminal,
       isExternal,
+      hooksOnly: hooksOnly || undefined,
+      providerId: p.providerId,
       projectDir: p.projectDir,
       jsonlFile: p.jsonlFile,
       fileOffset: 0,
@@ -361,9 +381,13 @@ export function restoreAgents(
     store.set(p.id, agent);
     knownJsonlFiles.add(p.jsonlFile);
     if (isExternal) {
-      console.log(
-        `[Pixel Agents] Terminal: Agent ${p.id} - restored external → ${path.basename(p.jsonlFile)}`,
-      );
+      if (hooksOnly) {
+        console.log(`[Pixel Agents] Terminal: Agent ${p.id} - restored hooks-only external`);
+      } else {
+        console.log(
+          `[Pixel Agents] Terminal: Agent ${p.id} - restored external → ${path.basename(p.jsonlFile)}`,
+        );
+      }
     } else {
       console.log(
         `[Pixel Agents] Terminal: Agent ${p.id} - restored → terminal "${p.terminalName}"`,
@@ -381,47 +405,49 @@ export function restoreAgents(
     restoredProjectDir = p.projectDir;
 
     // Start file watching if JSONL exists, skipping to end of file
-    try {
-      if (fs.existsSync(p.jsonlFile)) {
-        const stat = fs.statSync(p.jsonlFile);
-        agent.fileOffset = stat.size;
-        startFileWatching(
-          p.id,
-          p.jsonlFile,
-          store,
-          fileWatchers,
-          pollingTimers,
-          waitingTimers,
-          permissionTimers,
-        );
-      } else {
-        // Poll for the file to appear
-        const pollTimer = setInterval(() => {
-          try {
-            if (fs.existsSync(agent.jsonlFile)) {
-              console.log(`[Pixel Agents] Terminal: Agent ${p.id} - found JSONL file`);
-              clearInterval(pollTimer);
-              jsonlPollTimers.delete(p.id);
-              const stat = fs.statSync(agent.jsonlFile);
-              agent.fileOffset = stat.size;
-              startFileWatching(
-                p.id,
-                agent.jsonlFile,
-                store,
-                fileWatchers,
-                pollingTimers,
-                waitingTimers,
-                permissionTimers,
-              );
+    if (!hooksOnly) {
+      try {
+        if (fs.existsSync(p.jsonlFile)) {
+          const stat = fs.statSync(p.jsonlFile);
+          agent.fileOffset = stat.size;
+          startFileWatching(
+            p.id,
+            p.jsonlFile,
+            store,
+            fileWatchers,
+            pollingTimers,
+            waitingTimers,
+            permissionTimers,
+          );
+        } else {
+          // Poll for the file to appear
+          const pollTimer = setInterval(() => {
+            try {
+              if (fs.existsSync(agent.jsonlFile)) {
+                console.log(`[Pixel Agents] Terminal: Agent ${p.id} - found JSONL file`);
+                clearInterval(pollTimer);
+                jsonlPollTimers.delete(p.id);
+                const stat = fs.statSync(agent.jsonlFile);
+                agent.fileOffset = stat.size;
+                startFileWatching(
+                  p.id,
+                  agent.jsonlFile,
+                  store,
+                  fileWatchers,
+                  pollingTimers,
+                  waitingTimers,
+                  permissionTimers,
+                );
+              }
+            } catch {
+              /* file may not exist yet */
             }
-          } catch {
-            /* file may not exist yet */
-          }
-        }, JSONL_POLL_INTERVAL_MS);
-        jsonlPollTimers.set(p.id, pollTimer);
+          }, JSONL_POLL_INTERVAL_MS);
+          jsonlPollTimers.set(p.id, pollTimer);
+        }
+      } catch {
+        /* ignore errors during restore */
       }
-    } catch {
-      /* ignore errors during restore */
     }
   }
 
